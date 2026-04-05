@@ -4,6 +4,8 @@ import http from 'node:http';
 import cors from 'cors';
 import express from 'express';
 
+import './lib/network.js';
+
 import { env } from './config/env.js';
 import { redisSubscriber } from './lib/redis.js';
 import { registerSocketServer } from './lib/socket.js';
@@ -14,11 +16,12 @@ import { stopUploadWorker, startUploadWorker } from './services/uploadWorker.js'
 import { ensureUploadDir } from './utils/helpers.js';
 
 const app = express();
+const allowAnyOrigin = env.frontendOrigin === '*';
 
 app.use(
   cors({
-    origin: env.frontendOrigin,
-    credentials: true,
+    origin: allowAnyOrigin ? '*' : env.frontendOrigin,
+    credentials: !allowAnyOrigin,
   }),
 );
 app.use(express.json({ limit: '4mb' }));

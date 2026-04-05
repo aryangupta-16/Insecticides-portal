@@ -7,10 +7,13 @@ import { env } from '../config/env.js';
 let io: Server | null = null;
 
 export function registerSocketServer(server: HttpServer) {
+  const allowAnyOrigin = env.frontendOrigin === '*';
+
   io = new Server(server, {
     cors: {
-      origin: env.frontendOrigin,
+      origin: allowAnyOrigin ? '*' : env.frontendOrigin,
       methods: ['GET', 'POST', 'PATCH'],
+      credentials: !allowAnyOrigin,
     },
   });
 
