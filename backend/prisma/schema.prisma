@@ -1,0 +1,69 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model UploadBatch {
+  id            String   @id @default(cuid())
+  month         String
+  year          Int
+  originalName  String
+  filePath      String
+  status        String   @default("queued")
+  totalRows     Int      @default(0)
+  processedRows Int      @default(0)
+  message       String   @default("Queued for processing")
+  errorReport   Json?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  rows          MonthlyData[]
+
+  @@index([month, year])
+}
+
+model MonthlyData {
+  id               String      @id @default(cuid())
+  vp               String
+  state            String
+  staff            String
+  partyId          String
+  party            String
+  month            String
+  year             Int
+  totalOutstanding Decimal     @db.Decimal(18, 2)
+  aging121To150    Decimal     @db.Decimal(18, 2)
+  aging151To180    Decimal     @db.Decimal(18, 2)
+  aging181To240    Decimal     @db.Decimal(18, 2)
+  aging241To365    Decimal     @db.Decimal(18, 2)
+  aging366To540    Decimal     @db.Decimal(18, 2)
+  agingAbove540    Decimal     @db.Decimal(18, 2)
+  rowSequence      Int
+  uploadBatchId    String
+  createdAt        DateTime    @default(now())
+  updatedAt        DateTime    @updatedAt
+  uploadBatch      UploadBatch @relation(fields: [uploadBatchId], references: [id], onDelete: Cascade)
+
+  @@index([month, year])
+  @@index([state])
+  @@index([staff])
+  @@index([partyId])
+  @@unique([month, year, rowSequence])
+}
+
+model Comment {
+  id                    String   @id @default(cuid())
+  month                 String
+  year                  Int
+  rowSequence           Int
+  zmComment             String   @default("")
+  staffComment          String   @default("")
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  @@unique([month, year, rowSequence])
+  @@index([month, year])
+}

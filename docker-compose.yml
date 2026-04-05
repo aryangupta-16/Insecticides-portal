@@ -1,0 +1,90 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: insecticides-postgres
+    environment:
+      POSTGRES_DB: insecticides_portal
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5434:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d insecticides_portal"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: insecticides-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build:
+      context: ./backend
+    container_name: insecticides-backend
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/insecticides_portal?schema=public
+      REDIS_URL: redis://redis:6379
+      PORT: 4000
+      FRONTEND_ORIGIN: http://localhost:3000
+      UPLOAD_DIR: /app/uploads
+      RUN_WORKER_IN_PROCESS: "false"
+    command: sh -c "npx prisma migrate deploy && node dist/server.js"
+    ports:
+      - "4000:4000"
+    volumes:
+      - backend_uploads:/app/uploads
+
+  worker:
+    build:
+      context: ./backend
+    container_name: insecticides-worker
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/insecticides_portal?schema=public
+      REDIS_URL: redis://redis:6379
+      PORT: 4000
+      FRONTEND_ORIGIN: http://localhost:3000
+      UPLOAD_DIR: /app/uploads
+      RUN_WORKER_IN_PROCESS: "false"
+    command: sh -c "npx prisma migrate deploy && node dist/worker.js"
+    volumes:
+      - backend_uploads:/app/uploads
+
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        NEXT_PUBLIC_BACKEND_URL: http://localhost:4000
+    container_name: insecticides-frontend
+    depends_on:
+      - backend
+    environment:
+      NEXT_PUBLIC_BACKEND_URL: http://localhost:4000
+    ports:
+      - "3000:3000"
+
+volumes:
+  postgres_data:
+  redis_data:
+  backend_uploads:
