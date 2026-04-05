@@ -33,7 +33,7 @@ export async function getMonthlyData(filters: QueryFilters) {
   const skip = (page - 1) * pageSize;
   const where = buildWhere(filters);
 
-  const [rows, totalCount, aggregates, uniquePartyRows] = await prisma.$transaction([
+  const [rows, totalCount, aggregates, uniquePartyRows] = await Promise.all([
     prisma.monthlyData.findMany({
       where,
       orderBy,

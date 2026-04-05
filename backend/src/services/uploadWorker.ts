@@ -46,7 +46,7 @@ export function startUploadWorker() {
     },
     {
       connection: redis,
-      concurrency: 2,
+      concurrency: 1,
     },
   );
 
