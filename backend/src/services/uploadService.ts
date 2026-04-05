@@ -3,11 +3,24 @@ import { Readable } from 'node:stream';
 import ExcelJS from 'exceljs';
 
 import { prisma } from '../lib/prisma.js';
+import { env } from '../config/env.js';
 import { expectedHeaders } from '../utils/constants.js';
 import { clampProgress, normalizeHeader, toDecimalString } from '../utils/helpers.js';
 import type { ParsedUploadRow, ValidationError } from '../types/domain.js';
 import { readWorkbookBuffer } from './fileStorageService.js';
 import { publishProgress } from './progressPublisher.js';
+
+const INSERT_BATCH_SIZE = 500;
+
+function chunkRows<T>(rows: T[], size: number) {
+  const chunks: T[][] = [];
+
+  for (let index = 0; index < rows.length; index += size) {
+    chunks.push(rows.slice(index, index + size));
+  }
+
+  return chunks;
+}
 
 function resolveHeaderMap(rowValues: unknown[]) {
   const headerMap = new Map<string, number>();
@@ -109,6 +122,8 @@ function parseWorkbookRow(values: unknown[], headerMap: Map<string, number>, row
 }
 
 export async function processUploadJob(batchId: string, month: string, year: number, filePath: string) {
+  console.info('[upload-service] Loading workbook', { batchId, month, year, filePath });
+
   const workbook = new ExcelJS.Workbook();
   const workbookBuffer = await readWorkbookBuffer(filePath);
   await workbook.xlsx.read(Readable.from(workbookBuffer));
@@ -135,6 +150,8 @@ export async function processUploadJob(batchId: string, month: string, year: num
   const parsedRows: ParsedUploadRow[] = [];
   const validationErrors: ValidationError[] = [];
 
+  console.info('[upload-service] Workbook loaded', { batchId, totalRows, sheetName: worksheet.name });
+
   await publishProgress({
     batchId,
     status: 'processing',
@@ -155,6 +172,12 @@ export async function processUploadJob(batchId: string, month: string, year: num
     validationErrors.push(...rowErrors);
   });
 
+  console.info('[upload-service] Parsing finished', {
+    batchId,
+    parsedRows: parsedRows.length,
+    validationErrors: validationErrors.length,
+  });
+
   if (validationErrors.length > 0) {
     await publishProgress({
       batchId,
@@ -168,13 +191,33 @@ export async function processUploadJob(batchId: string, month: string, year: num
     throw new Error('Validation failed');
   }
 
+  await publishProgress({
+    batchId,
+    status: 'processing',
+    processedRows: parsedRows.length,
+    totalRows,
+    progress: 70,
+    message: 'Writing validated rows to the database',
+  });
+
+  const monthlyDataChunks = chunkRows(parsedRows, INSERT_BATCH_SIZE);
+  const commentChunks = chunkRows(parsedRows, INSERT_BATCH_SIZE);
+
+  console.info('[upload-service] Starting database transaction', {
+    batchId,
+    totalRows: parsedRows.length,
+    monthlyDataChunks: monthlyDataChunks.length,
+    commentChunks: commentChunks.length,
+    timeoutMs: env.uploadTransactionTimeoutMs,
+  });
+
   await prisma.$transaction(async (tx) => {
     await tx.monthlyData.deleteMany({ where: { month, year } });
     await tx.comment.deleteMany({ where: { month, year } });
 
-    if (parsedRows.length > 0) {
+    for (const [index, rowsChunk] of monthlyDataChunks.entries()) {
       await tx.monthlyData.createMany({
-        data: parsedRows.map((row) => ({
+        data: rowsChunk.map((row) => ({
           vp: row.vp,
           state: row.state,
           staff: row.staff,
@@ -194,8 +237,17 @@ export async function processUploadJob(batchId: string, month: string, year: num
         })),
       });
 
+      console.info('[upload-service] Inserted monthly data chunk', {
+        batchId,
+        chunk: index + 1,
+        totalChunks: monthlyDataChunks.length,
+        rows: rowsChunk.length,
+      });
+    }
+
+    for (const [index, rowsChunk] of commentChunks.entries()) {
       await tx.comment.createMany({
-        data: parsedRows.map((row) => ({
+        data: rowsChunk.map((row) => ({
           month,
           year,
           rowSequence: row.rowSequence,
@@ -203,7 +255,22 @@ export async function processUploadJob(batchId: string, month: string, year: num
           staffComment: row.staffComment,
         })),
       });
+
+      console.info('[upload-service] Inserted comment chunk', {
+        batchId,
+        chunk: index + 1,
+        totalChunks: commentChunks.length,
+        rows: rowsChunk.length,
+      });
     }
+  }, {
+    maxWait: 10000,
+    timeout: env.uploadTransactionTimeoutMs,
+  });
+
+  console.info('[upload-service] Database transaction committed', {
+    batchId,
+    totalRows: parsedRows.length,
   });
 
   await publishProgress({

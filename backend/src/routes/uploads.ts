@@ -50,6 +50,13 @@ uploadRouter.post('/', upload.single('file'), async (req, res, next) => {
       return res.status(400).json({ message: 'Excel file is required' });
     }
 
+    console.info('[upload] Received file upload request', {
+      fileName: req.file.originalname,
+      month: parsed.month,
+      year: parsed.year,
+      sizeBytes: req.file.size,
+    });
+
     const localFilePath = path.resolve(req.file.path);
     let queuedFilePath = localFilePath;
 
@@ -81,6 +88,13 @@ uploadRouter.post('/', upload.single('file'), async (req, res, next) => {
       year: parsed.year,
       filePath: queuedFilePath,
       originalName: req.file.originalname,
+    });
+
+    console.info('[upload] Queued import job', {
+      batchId: batch.id,
+      month: parsed.month,
+      year: parsed.year,
+      filePath: queuedFilePath,
     });
 
     return res.status(202).json({ batchId: batch.id, status: 'queued' });

@@ -17,6 +17,14 @@ export function startUploadWorker() {
     async (job) => {
       const { batchId, month, year, filePath } = job.data;
 
+      console.info('[upload-worker] Starting job', {
+        jobId: job.id,
+        batchId,
+        month,
+        year,
+        filePath,
+      });
+
       await publishProgress({
         batchId,
         status: 'processing',
@@ -26,7 +34,15 @@ export function startUploadWorker() {
         message: `Started processing ${month} ${year}`,
       });
 
-      return processUploadJob(batchId, month, year, filePath);
+      const result = await processUploadJob(batchId, month, year, filePath);
+
+      console.info('[upload-worker] Finished job', {
+        jobId: job.id,
+        batchId,
+        totalRows: result.totalRows,
+      });
+
+      return result;
     },
     {
       connection: redis,
@@ -39,6 +55,12 @@ export function startUploadWorker() {
       return;
     }
 
+    console.error('[upload-worker] Job failed', {
+      jobId: job.id,
+      batchId: job.data.batchId,
+      error: error.message,
+    });
+
     await publishProgress({
       batchId: job.data.batchId,
       status: 'failed',
@@ -46,6 +68,13 @@ export function startUploadWorker() {
       totalRows: 0,
       progress: 0,
       message: error.message || 'Upload failed unexpectedly',
+    });
+  });
+
+  uploadWorker.on('completed', (job) => {
+    console.info('[upload-worker] Job completed', {
+      jobId: job.id,
+      batchId: job.data.batchId,
     });
   });
 

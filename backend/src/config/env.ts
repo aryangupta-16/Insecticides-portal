@@ -11,6 +11,7 @@ export const env = {
   supabaseUrl: process.env.SUPABASE_URL || '',
   supabaseServiceRoleKey: process.env.SUPABASE_SERVICE_ROLE_KEY || '',
   supabaseStorageBucket: process.env.SUPABASE_STORAGE_BUCKET || '',
+  uploadTransactionTimeoutMs: Number(process.env.UPLOAD_TRANSACTION_TIMEOUT_MS || 120000),
   runWorkerInProcess: process.env.RUN_WORKER_IN_PROCESS
     ? process.env.RUN_WORKER_IN_PROCESS === 'true'
     : process.env.NODE_ENV === 'production',
